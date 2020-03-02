@@ -3,9 +3,13 @@ package com.example.chat;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.NotificationManagerCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import android.content.Intent;
+import android.database.Cursor;
+import android.database.sqlite.SQLiteDatabase;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.util.Log;
@@ -26,7 +30,7 @@ import java.util.List;
 public class ChatActivity extends AppCompatActivity {
 
     private RecyclerView mRecyclerView;
-    public  RecyclerView.Adapter mAdapter;
+    public RecyclerView.Adapter mAdapter;
     private RecyclerView.LayoutManager mLayoutManager;
     private List<ChatData> chatList;
     private String nick;
@@ -34,6 +38,7 @@ public class ChatActivity extends AppCompatActivity {
     private EditText EditText_chat;
     private Button Button_send;
     private DatabaseReference myRef;
+    public static final String NOTIFICATION_CHANNEL_ID = "10001";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -50,8 +55,7 @@ public class ChatActivity extends AppCompatActivity {
             @Override
             public void onClick(View v) {
                 String msg = EditText_chat.getText().toString(); //msg
-
-                if(msg != null) {
+                if (msg != null) {
                     ChatData chat = new ChatData();
                     chat.setNickname(nick);
                     chat.setMsg(msg);
@@ -63,7 +67,6 @@ public class ChatActivity extends AppCompatActivity {
         });
 
 
-
         mRecyclerView = findViewById(R.id.my_recycler_view);
         mRecyclerView.setHasFixedSize(true);
         mLayoutManager = new LinearLayoutManager(this);
@@ -71,6 +74,18 @@ public class ChatActivity extends AppCompatActivity {
 
         chatList = new ArrayList<>();
         mAdapter = new ChatAdapter(chatList, ChatActivity.this, nick);
+
+        DBHelper helper = new DBHelper(this);
+        SQLiteDatabase db = helper.getWritableDatabase();
+        Cursor cursor = db.rawQuery("select * from tb_memo", null);
+        if(cursor.getCount()>0){
+            while (cursor.moveToNext()){
+                ChatData data = new ChatData();
+                data.setNickname(cursor.getString(cursor.getColumnIndex("nickname")));
+                data.setMsg(cursor.getString(cursor.getColumnIndex("msg")));
+                ((ChatAdapter) mAdapter).addChat(data);
+            }
+        }
 
         mRecyclerView.setAdapter(mAdapter);
 
@@ -82,10 +97,17 @@ public class ChatActivity extends AppCompatActivity {
         //caution!!!
 
         myRef.addChildEventListener(new ChildEventListener() {
+            DBHelper helper = new DBHelper(getApplicationContext());
+            SQLiteDatabase db = helper.getWritableDatabase();
             @Override
             public void onChildAdded(@NonNull DataSnapshot dataSnapshot, @Nullable String s) {
-                Log.d("CHATCHAT", dataSnapshot.getValue().toString());
+
+                Log.d("LISTENER", "리스너 접속!!");
+                removeNotification();
                 ChatData chat = dataSnapshot.getValue(ChatData.class);
+                Log.d("CHAT",dataSnapshot.getValue().toString());
+                db.execSQL("insert into tb_memo(nickname, msg) values (?,?)",
+                        new String[]{chat.getNickname(),chat.getMsg()});
                 ((ChatAdapter) mAdapter).addChat(chat);
             }
 
@@ -118,4 +140,32 @@ public class ChatActivity extends AppCompatActivity {
         //1. message, nickname - Data Transfer Object
 
     }
+
+    @Override
+    public void onStop() {
+        super.onStop();
+//        Toast.makeText(getApplicationContext(), "Service 시작", Toast.LENGTH_SHORT).show();
+        Intent intent = new Intent(this, ChatService.class);
+        startService(intent);
+
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+    }
+
+    @Override
+    public void onRestart() {
+//        Toast.makeText(getApplicationContext(), "Service 시작", Toast.LENGTH_SHORT).show();
+        Intent intent = new Intent(this, ChatService.class);
+        stopService(intent);
+        super.onRestart();
+    }
+
+    private void removeNotification() {
+// Notification 제거
+        NotificationManagerCompat.from(this).cancel(1234);
+    }
+
 }
